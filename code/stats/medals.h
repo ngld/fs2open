@@ -70,14 +70,11 @@ extern void parse_medal_tbl();
 #define MM_POPUP				1		// called from within some other tight loop (don't use gameseq_ functions)
 
 // main medals screen
-void medal_main_init(player *pl,int mode = MM_NORMAL);
+void medal_main_init(player *pl, int mode = MM_NORMAL);
 
 // return 0 if the screen should close (used for MM_POPUP mode)
 int medal_main_do();
 void medal_main_close();
-
-// individual medals
-void medals_translate_name(char *name, int max_len);
 
 int medals_info_lookup(const char *name);
 
