@@ -26,6 +26,7 @@
 #include "external_dll/trackirpublic.h"
 #include "jumpnode/jumpnode.h"
 #include "lighting/lighting.h"
+#include "menuui/tblui.h"
 #include "mission/missioncampaign.h"
 #include "mission/missiongoals.h"
 #include "mission/missionload.h"
@@ -6553,9 +6554,9 @@ ADE_VIRTVAR(AmmoMax, l_WeaponBank, "number", "Maximum ammo for the current bank<
 	{
 		case SWH_PRIMARY:
 			{
-			if(ADE_SETTING_VAR && ammomax > -1) {
+				if(ADE_SETTING_VAR && ammomax > -1) {
 					bh->sw->primary_bank_capacity[bh->bank] = ammomax;
-			}
+				}
 
 				int weapon_class = bh->sw->primary_bank_weapons[bh->bank];
 
@@ -6565,9 +6566,9 @@ ADE_VIRTVAR(AmmoMax, l_WeaponBank, "number", "Maximum ammo for the current bank<
 			}
 		case SWH_SECONDARY:
 			{
-			if(ADE_SETTING_VAR && ammomax > -1) {
+				if(ADE_SETTING_VAR && ammomax > -1) {
 					bh->sw->secondary_bank_capacity[bh->bank] = ammomax;
-			}
+				}
 
 				int weapon_class = bh->sw->secondary_bank_weapons[bh->bank];
 
@@ -11991,6 +11992,28 @@ ADE_FUNC(postGameEvent, l_Base, "gameevent Event", "Sets current game event. Not
 	gameseq_post_event(gh->Get());
 
 	return ADE_RETURN_TRUE;
+}
+
+ADE_FUNC(readTblui, l_Base, "string Filename", "Reads the given TBLUI table.", NULL, NULL)
+{
+	char *filename;
+	if(!ade_get_args(L, "s", &filename))
+		return ADE_RETURN_NIL;
+	
+	tblui_parse_table((SCP_string) filename);
+	
+	return ADE_RETURN_NIL;
+}
+
+ADE_FUNC(openTblui, l_Base, "string Interface Name", "Opens the given interface (table).", NULL, NULL)
+{
+	char *name;
+	if(!ade_get_args(L, "s", &name))
+		return ADE_RETURN_NIL;
+	
+	tblui_open((SCP_string) name);
+	
+	return ADE_RETURN_NIL;
 }
 
 //**********SUBLIBRARY: Base/Events

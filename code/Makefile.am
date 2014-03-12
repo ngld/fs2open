@@ -438,6 +438,7 @@ FS2_SOURCES =	\
 	menuui/readyroom.h	\
 	menuui/snazzyui.cpp	\
 	menuui/snazzyui.h	\
+	menuui/tblui.cpp	\
 	menuui/techmenu.cpp	\
 	menuui/techmenu.h	\
 	menuui/trainingmenu.cpp	\

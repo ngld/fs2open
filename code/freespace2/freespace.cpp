@@ -76,6 +76,7 @@
 #include "menuui/playermenu.h"
 #include "menuui/readyroom.h"
 #include "menuui/snazzyui.h"
+#include "menuui/tblui.h"
 #include "menuui/techmenu.h"
 #include "menuui/trainingmenu.h"
 #include "mission/missionbriefcommon.h"
@@ -983,7 +984,7 @@ void game_level_init(int seed)
 	batch_reset();
 
 	// Initialize the game subsystems
-		game_reset_time();			// resets time, and resets saved time too
+	game_reset_time();			// resets time, and resets saved time too
 
 	Multi_ping_timestamp = -1;
 
@@ -5457,6 +5458,10 @@ void game_process_event( int current_state, int event )
 		case GS_EVENT_SCRIPTING:
 			gameseq_set_state(GS_STATE_SCRIPTING);
 			break;
+		
+		case GS_EVENT_TBLUI:
+			gameseq_set_state(GS_STATE_TBLUI);
+			break;
 
 		default:
 			Int3();
@@ -5555,7 +5560,7 @@ void game_leave_state( int old_state, int new_state )
 
 			} else {
 				cmd_brief_close();
-					common_select_close();
+				common_select_close();
 				if (new_state == GS_STATE_MAIN_MENU) {
 					freespace_stop_mission();	
 				}
@@ -5862,6 +5867,10 @@ void game_leave_state( int old_state, int new_state )
 
 		case GS_STATE_SCRIPTING:
 			scripting_state_close();
+			break;
+		
+		case GS_STATE_TBLUI:
+			tblui_state_close();
 			break;
 	}
 
@@ -6390,6 +6399,10 @@ void mouse_force_pos(int x, int y);
 		case GS_STATE_SCRIPTING:
 			scripting_state_init();
 			break;
+		
+		case GS_STATE_TBLUI:
+			tblui_state_init();
+			break;
 	} // end switch
 
 	//WMC - now do user scripting stuff
@@ -6723,6 +6736,11 @@ void game_do_state(int state)
 		case GS_STATE_SCRIPTING:
 			game_set_frametime(GS_STATE_SCRIPTING);
 			scripting_state_do_frame(flFrametime);
+			break;
+		
+		case GS_STATE_TBLUI:
+			game_set_frametime(GS_STATE_SCRIPTING);
+			tblui_do_frame(flFrametime);
 			break;
 
    } // end switch(gs_current_state)
