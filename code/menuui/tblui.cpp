@@ -11,17 +11,22 @@
 #include <typeinfo>
 #include <stack>
 
-#include "freespace2/freespace.h"
-#include "menuui/tblui.h"
-#include "menuui/snazzyui.h"
+#include "ai/ai_profiles.h"
 #include "bmpman/bmpman.h"
-#include "graphics/2d.h"
-#include "graphics/generic.h"
-#include "graphics/font.h"
-#include "parse/parselo.h"
+#include "freespace2/freespace.h"
 #include "gamesequence/gamesequence.h"
+#include "graphics/2d.h"
+#include "graphics/font.h"
+#include "graphics/generic.h"
 #include "io/key.h"
 #include "io/mouse.h"
+#include "io/timer.h"
+#include "menuui/tblui.h"
+#include "menuui/snazzyui.h"
+#include "mission/missionparse.h"
+#include "missionui/missionscreencommon.h"
+#include "model/model.h"
+#include "parse/parselo.h"
 
 #define TBLUI_OPTION(opt, code) if (option == opt) { code; return true; } else
 #define TBLUI_OPTION_END { return super::parse_option(option); }
@@ -32,6 +37,8 @@ float Tblui_frametime = 0.0f;
 int Tblui_mouse_px = 0, Tblui_mouse_py = 0;
 SCP_map<SCP_string,TbluiElement> Tblui_uis;
 
+// Reference to missionscreencommon.cpp
+extern int anim_timer_start;
 
 void draw_pline(vec3d *line, int line_len, int thickness)
 {
@@ -279,6 +286,9 @@ TbluiElement::TbluiElement() {
     x = 0;
     y = 0;
     
+    ox = 0;
+    oy = 0;
+    
     calc_w = 0;
     calc_h = 0;
     
@@ -300,7 +310,11 @@ TbluiElement::TbluiElement() {
     padding = 0;
     center_x = false;
     center_y = false;
-    autosize = false;
+    
+    auto_w = false;
+    auto_h = false;
+    
+    dragable = false;
     
     click_handler = NULL;
     hover_handler = NULL;
@@ -309,7 +323,9 @@ TbluiElement::TbluiElement() {
 
 TbluiElement::~TbluiElement()
 {
-    for (int idx = 0; idx < children.size(); idx++) {
+    this->unload();
+    
+    for (int idx = 0; idx < (int) children.size(); idx++) {
         delete children.at(idx);
     }
     
@@ -389,14 +405,14 @@ bool TbluiElement::parse_option(SCP_string& option)
     TBLUI_OPTION("Padding",
         stuff_int(&padding);
     )
-    TBLUI_OPTION("Autosize",
-        autosize = true;
-    )
     TBLUI_OPTION("CenterX",
         center_x = true;
     )
     TBLUI_OPTION("CenterY",
         center_y = true;
+    )
+    TBLUI_OPTION("Drag",
+        dragable = true;
     )
     {
         return false;
@@ -405,6 +421,10 @@ bool TbluiElement::parse_option(SCP_string& option)
 
 void TbluiElement::reposition()
 {
+    // Figure if we have to calculate the width and/or the height.
+    if (!auto_w) auto_w = width == 0 && (left == -1 || right == -1);
+    if (!auto_h) auto_h = height == 0 && (top == -1 || bottom == -1);
+    
     if (parent == NULL) {
         // The top element!
         
@@ -436,21 +456,21 @@ void TbluiElement::reposition()
         left = p_left * calc_w / 100;
     }
     
-    if (autosize) {
+    if (auto_w || auto_h) {
         // Now reposition all children.
         this->reposition_children();
         
         // Try to determine our size.
-        width = 1;
-        height = 1;
+        if (auto_w) width = 1;
+        if (auto_h) height = 1;
         
-        for (int idx = 0; idx < children.size(); idx++) {
-            width = std::max(width, children.at(idx)->x - x + children.at(idx)->calc_w);
-            height = std::max(height, children.at(idx)->y - y + children.at(idx)->calc_h);
+        for (int idx = 0; idx < (int) children.size(); idx++) {
+            if (auto_w) width = std::max(width, children.at(idx)->x - x + children.at(idx)->calc_w);
+            if (auto_h) height = std::max(height, children.at(idx)->y - y + children.at(idx)->calc_h);
         }
         
-        width += padding;
-        height += padding;
+        if (auto_w) width += padding;
+        if (auto_h) height += padding;
     }
     
     if (width > 0) {
@@ -505,8 +525,22 @@ void TbluiElement::reposition()
 void TbluiElement::reposition_children()
 {
     // Now reposition all children.
-    for (int idx = 0; idx < children.size(); idx++) {
+    for (int idx = 0; idx < (int) children.size(); idx++) {
         children.at(idx)->reposition();
+    }
+}
+
+void TbluiElement::load()
+{
+    for (int idx = 0; idx < (int) children.size(); idx++) {
+        children.at(idx)->load();
+    }
+}
+
+void TbluiElement::unload()
+{
+    for (int idx = 0; idx < (int) children.size(); idx++) {
+        children.at(idx)->unload();
     }
 }
 
@@ -533,13 +567,18 @@ void TbluiElement::render()
 {
     // Render the children...
     
-    for (int idx = 0; idx < children.size(); idx++) {
+    for (int idx = 0; idx < (int) children.size(); idx++) {
         children.at(idx)->render();
     }
 }
 
 void TbluiElement::click(bool down)
 {
+    if (down && dragable) {
+        ox = x;
+        oy = y;
+    }
+    
     if (click_handler != NULL) {
         click_handler(down, click_params);
     }
@@ -554,10 +593,16 @@ void TbluiElement::hover(bool mouse_over)
 
 void TbluiElement::drag(int dx, int dy)
 {
+    if (dragable) {
+        x = ox + dx;
+        y = oy + dy;
+    }
+    
     if (drag_handler != NULL) {
         drag_handler(dx, dy, drag_params);
     }
 }
+
 
 /**
  * A simple box.
@@ -657,8 +702,7 @@ bool TbluiText::parse_option(SCP_string& option)
     )
     
     TBLUI_OPTION("Text",
-        parse_message(temp);
-        this->set_text(temp);
+        parse_message(raw_text);
     )
     TBLUI_OPTION_END
 }
@@ -675,11 +719,6 @@ void TbluiText::set_font(SCP_string filename)
     text_font = my_font;
 }
 
-void TbluiText::set_text(SCP_string msg)
-{
-    text = parse_text(msg, text_font, text_color);
-}
-
 void TbluiText::reposition()
 {
     if (width == 0 || height == 0) {
@@ -687,6 +726,18 @@ void TbluiText::reposition()
     }
     
     super::reposition();
+}
+
+void TbluiText::load()
+{
+    text = parse_text(raw_text, text_font, text_color);
+    super::load();
+}
+
+void TbluiText::unload()
+{
+    super::unload();
+    text.clear();
 }
 
 void TbluiText::render()
@@ -700,34 +751,15 @@ void TbluiText::render()
 /**
  * A simple image.
  */
-TbluiImage::~TbluiImage()
-{
-    if (image > 0) bm_release(image);
-}
-
 bool TbluiImage::parse_option(SCP_string& option)
 {
     TBLUI_OPTION("Image",
-        SCP_string temp;
-        stuff_string(temp, F_FILESPEC);
-        this->set_image(temp);
+        stuff_string(image_file, F_FILESPEC);
     )
     TBLUI_OPTION("Stretch",
         stretch = true;
     )
     TBLUI_OPTION_END
-}
-
-void TbluiImage::set_image(SCP_string filename)
-{
-    int bmp = bm_load(filename);
-    
-    if (bmp < 0) {
-        Warning(LOCATION, "Failed to load image '%s'!", filename.c_str());
-        return;
-    }
-    
-    image = bmp;
 }
 
 void TbluiImage::reposition()
@@ -737,6 +769,25 @@ void TbluiImage::reposition()
     }
     
     super::reposition();
+}
+
+void TbluiImage::load()
+{
+    int bmp = bm_load(image_file);
+    
+    if (bmp < 0) {
+        Warning(LOCATION, "Failed to load image '%s'!", image_file.c_str());
+        return;
+    }
+    
+    image = bmp;
+    super::load();
+}
+
+void TbluiImage::unload()
+{
+    super::unload();
+    if (image > 0) bm_release(image);
 }
 
 void TbluiImage::render()
@@ -755,26 +806,15 @@ void TbluiImage::render()
 /**
  * A generic animation.
  */
-TbluiAnim::~TbluiAnim()
-{
-    generic_anim_unload(&anim);
-}
-
 bool TbluiAnim::parse_option(SCP_string& option)
 {
+    TBLUI_OPTION("Anim",
+        stuff_string(anim_file, F_FILESPEC);
+    )
     TBLUI_OPTION("Noloop",
         noloop = true;
     )
-    TBLUI_OPTION("Drag",
-        dragable = true;
-    )
     TBLUI_OPTION_END
-}
-
-void TbluiAnim::set_anim(SCP_string filename)
-{
-    generic_anim_init(&anim, filename);
-    generic_anim_stream(&anim);
 }
 
 void TbluiAnim::reposition()
@@ -789,6 +829,20 @@ void TbluiAnim::reposition()
     super::reposition();
 }
 
+void TbluiAnim::load()
+{
+    generic_anim_init(&anim, anim_file);
+    generic_anim_stream(&anim);
+    
+    super::load();
+}
+
+void TbluiAnim::unload()
+{
+    super::unload();
+    generic_anim_unload(&anim);
+}
+
 void TbluiAnim::render()
 {
     generic_anim_render(&anim, Tblui_frametime, x, y);
@@ -796,57 +850,35 @@ void TbluiAnim::render()
     super::render();
 }
 
-void TbluiAnim::click(bool down)
-{
-    if (down && dragable) {
-        ox = x;
-        oy = y;
-    }
-    super::click(down);
-}
-
-void TbluiAnim::drag(int dx, int dy)
-{
-    if (dragable) {
-        x = ox + dx;
-        y = oy + dy;
-    }
-    super::drag(dx, dy);
-}
-
 
 /**
  * A simple button.
  */
-TbluiButton::~TbluiButton()
-{
-    if (hover_img > 0) bm_release(hover_img);
-    if (click_img > 0) bm_release(click_img);
-}
-
 bool TbluiButton::parse_option(SCP_string& option)
 {
-    SCP_string temp;
-    
     TBLUI_OPTION("HoverImage",
-        stuff_string(temp, F_FILESPEC);
-        this->set_hover_image(temp);
+        stuff_string(hover_file, F_FILESPEC);
     )
     TBLUI_OPTION("ClickImage",
-        stuff_string(temp, F_FILESPEC);
-        this->set_click_image(temp);
+        stuff_string(click_file, F_FILESPEC);
     )
     TBLUI_OPTION_END
 }
 
-void TbluiButton::set_hover_image(SCP_string filename)
+void TbluiButton::load()
 {
-    hover_img = bm_load(filename);
+    if (!hover_file.empty()) hover_img = bm_load(hover_file);
+    if (!click_file.empty()) click_img = bm_load(click_file);
+    
+    super::load();
 }
 
-void TbluiButton::set_click_image(SCP_string filename)
+void TbluiButton::unload()
 {
-    click_img = bm_load(filename);
+    super::unload();
+    
+    if (hover_img > 0) bm_release(hover_img);
+    if (click_img > 0) bm_release(click_img);
 }
 
 void TbluiButton::hover(bool mouse_over)
@@ -950,13 +982,13 @@ TbluiSlider::TbluiSlider()
     circle->top = 0;
     circle->left = 0;
     
-    up->set_image("2_BAB_100001");
-    up->set_hover_image("2_BAB_100002");
+    up->image_file = "2_BAB_100001";
+    up->hover_file = "2_BAB_100002";
     
-    down->set_image("2_BAB_090001");
-    down->set_hover_image("2_BAB_090002");
+    down->image_file = "2_BAB_090001";
+    down->hover_file = "2_BAB_090002";
     
-    circle->set_image("2_HCB_140001");
+    circle->image_file = "2_HCB_140001";
     
     up->set_click_handler(tbluislider_up_handler, (void*)this);
     down->set_click_handler(tbluislider_down_handler, (void*)this);
@@ -980,40 +1012,31 @@ bool TbluiSlider::parse_option(SCP_string& option)
         horizontal = true;
     )
     TBLUI_OPTION("Image",
-        stuff_string(temp, F_FILESPEC);
-        circle->set_image(temp);
+        stuff_string(circle->image_file, F_FILESPEC);
     )
     TBLUI_OPTION("ImageHover",
-        stuff_string(temp, F_FILESPEC);
-        circle->set_hover_image(temp);
+        stuff_string(circle->hover_file, F_FILESPEC);
     )
     TBLUI_OPTION("ImageClick",
-        stuff_string(temp, F_FILESPEC);
-        circle->set_click_image(temp);
+        stuff_string(circle->click_file, F_FILESPEC);
     )
     TBLUI_OPTION("UpImage",
-        stuff_string(temp, F_FILESPEC);
-        up->set_image(temp);
+        stuff_string(up->image_file, F_FILESPEC);
     )
     TBLUI_OPTION("UpImageHover",
-        stuff_string(temp, F_FILESPEC);
-        up->set_hover_image(temp);
+        stuff_string(up->hover_file, F_FILESPEC);
     )
     TBLUI_OPTION("UpImageClick",
-        stuff_string(temp, F_FILESPEC);
-        up->set_click_image(temp);
+        stuff_string(up->click_file, F_FILESPEC);
     )
     TBLUI_OPTION("DownImage",
-        stuff_string(temp, F_FILESPEC);
-        down->set_image(temp);
+        stuff_string(down->image_file, F_FILESPEC);
     )
     TBLUI_OPTION("DownImageHover",
-        stuff_string(temp, F_FILESPEC);
-        down->set_hover_image(temp);
+        stuff_string(down->hover_file, F_FILESPEC);
     )
     TBLUI_OPTION("DownImageClick",
-        stuff_string(temp, F_FILESPEC);
-        down->set_click_image(temp);
+        stuff_string(down->click_file, F_FILESPEC);
     )
     TBLUI_OPTION_END
 }
@@ -1115,6 +1138,69 @@ void TbluiTextBox::render()
     TbluiElement::render();
 }
 
+/**
+ * A model viewer.
+ */
+TbluiModelViewer::TbluiModelViewer()
+{
+    model = -1;
+    rotation = 0;
+    should_rotate = false;
+}
+
+bool TbluiModelViewer::parse_option(SCP_string& option)
+{
+    TBLUI_OPTION("Model",
+        stuff_string(model_file, F_FILESPEC);
+    )
+    TBLUI_OPTION("Rotate",
+        should_rotate = true;
+    )
+    TBLUI_OPTION_END
+}
+
+void TbluiModelViewer::reposition()
+{
+    super::reposition();
+    
+    mprintf(("ModelViewer at (%d, %d) %d x %d.\n", x, y, calc_w, calc_h));
+}
+
+void TbluiModelViewer::load()
+{
+    // The model renderer needs an AI profile....
+    if (!The_mission.ai_profile) {
+        The_mission.ai_profile = &Ai_profiles[Default_ai_profile];
+    }
+    
+    model = model_load((char*) model_file.c_str(), 0, NULL, 0);
+    model_page_in_textures(model);
+    
+    anim_timer_start = timer_get_milliseconds();
+    
+    super::load();
+}
+
+void TbluiModelViewer::unload()
+{
+    super::unload();
+    
+    if (model > -1) model_unload(model);
+}
+
+void TbluiModelViewer::render()
+{
+    if (should_rotate) {
+        draw_model_rotating(model, x, y, calc_w, calc_h, &rotation);
+    } else {
+        draw_model_icon(model, MR_LOCK_DETAIL | MR_AUTOCENTER, 1.0f, x, y, calc_w, calc_h);
+    }
+    
+    
+    super::render();
+}
+
+
 // Helpers
 
 void tblui_open(SCP_string name)
@@ -1131,7 +1217,6 @@ void tblui_open(SCP_string name)
     }
     
     Tblui_cur_ui = &Tblui_uis[name];
-    Tblui_cur_ui->reposition();
     
     gameseq_post_event(GS_EVENT_TBLUI);
 }
@@ -1153,6 +1238,9 @@ void tblui_state_init()
         // Try default. (Will most likely fail...)
         Tblui_cur_ui = &Tblui_uis["default"];
     }
+    
+    Tblui_cur_ui->load();
+    Tblui_cur_ui->reposition();
     
     // Disable screen stretching.
     gr_reset_screen_scale();
@@ -1211,6 +1299,9 @@ void tblui_do_frame(float frametime)
 
 void tblui_state_close()
 {
+    Tblui_cur_ui->unload();
+    Tblui_cur_ui = NULL;
+    
     // Re-enable screen stretching.
     gr_set_screen_scale(1024, 768);
 }
@@ -1233,17 +1324,17 @@ void tblui_parse_children(TbluiElement *parent)
         } else if (optional_string("$Image:")) {
             child = new TbluiImage;
             
-            stuff_string(option, F_FILESPEC);
-            ((TbluiImage*) child)->set_image(option);
+            stuff_string(((TbluiImage*) child)->image_file, F_FILESPEC);
         } else if (optional_string("$Anim:")) {
             child = new TbluiAnim;
             
-            stuff_string(option, F_FILESPEC);
-            ((TbluiAnim*) child)->set_anim(option);
+            stuff_string(((TbluiAnim*) child)->anim_file, F_FILESPEC);
         } else if (optional_string("$Button")) {
             child = new TbluiButton;
         } else if (optional_string("$Slider")) {
             child = new TbluiSlider;
+        } else if (optional_string("$ModelViewer")) {
+            child = new TbluiModelViewer;
         } else {
             stuff_string(option, F_RAW);
             Error(LOCATION, "Expected tblui element! Found [%s]!", option.c_str());
@@ -1273,7 +1364,6 @@ void tblui_parse_children(TbluiElement *parent)
 void tblui_parse_table(SCP_string filename)
 {
     SCP_string temp;
-    TbluiElement *dummy;
     
     read_file_text(filename.c_str(), CF_TYPE_TABLES);
     reset_parse();

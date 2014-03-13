@@ -38,11 +38,11 @@ protected:
     SCP_vector<TbluiElement*> children;
 
 public:
-    int x, y;
+    int x, y, ox, oy;
     int calc_w, calc_h;
     
     int p_top, p_right, p_bottom, p_left;
-    bool autosize;
+    bool auto_w, auto_h;
     
     int top;
     int right;
@@ -54,6 +54,8 @@ public:
     
     int padding;
     bool center_x, center_y;
+    
+    bool dragable;
     
     void (*click_handler)(bool, void*);
     void (*hover_handler)(bool, void*);
@@ -76,6 +78,8 @@ public:
     
     virtual void reposition();
     virtual void reposition_children();
+    virtual void load();
+    virtual void unload();
     virtual TbluiElement* find_element(int x, int y);
     virtual void render();
     virtual void click(bool);
@@ -108,15 +112,17 @@ private:
 public:
     color text_color;
     int text_font;
+    SCP_string raw_text;
     tblui_text text;
     
     TbluiText();
     
     virtual bool parse_option(SCP_string&);
     void set_font(SCP_string filename);
-    virtual void set_text(SCP_string text);
     
     virtual void reposition();
+    virtual void load();
+    virtual void unload();
     virtual void render();
 };
 
@@ -126,15 +132,16 @@ private:
     typedef TbluiElement super;
     
 public:
+    SCP_string image_file;
     int image;
     bool stretch;
     
     TbluiImage() : image(0), stretch(false) {}
-    ~TbluiImage();
     virtual bool parse_option(SCP_string&);
     
-    void set_image(SCP_string);
     virtual void reposition();
+    virtual void load();
+    virtual void unload();
     virtual void render();
 };
 
@@ -144,20 +151,17 @@ private:
     typedef TbluiElement super;
 
 public:
+    SCP_string anim_file;
     generic_anim anim;
     bool noloop;
-    bool dragable;
-    int ox, oy;
     
-    TbluiAnim() : noloop(false), dragable(false) {}
-    ~TbluiAnim();
+    TbluiAnim() : noloop(false) {}
     virtual bool parse_option(SCP_string&);
     
-    void set_anim(SCP_string);
     virtual void reposition();
+    virtual void load();
+    virtual void unload();
     virtual void render();
-    virtual void click(bool);
-    virtual void drag(int, int);
 };
 
 class TbluiButton : public TbluiImage
@@ -166,6 +170,8 @@ private:
     typedef TbluiImage super;
     
 public:
+    SCP_string hover_file;
+    SCP_string click_file;
     int hover_img;
     int click_img;
     
@@ -174,12 +180,11 @@ public:
     int state;
     
     TbluiButton() : hover_img(0), click_img(0), disabled(false), state(0) {}
-    ~TbluiButton();
     virtual bool parse_option(SCP_string&);
-    void set_hover_image(SCP_string);
-    void set_click_image(SCP_string);
     
     virtual void render();
+    virtual void load();
+    virtual void unload();
     virtual void click(bool);
     virtual void hover(bool);
 };
@@ -217,6 +222,30 @@ public:
     
     virtual bool parse_option(SCP_string& option);
     virtual void reposition();
+    // virtual void load();
+    // virtual void unload();
+    virtual void render();
+};
+
+class TbluiModelViewer : public TbluiElement
+{
+private:
+    typedef TbluiElement super;
+
+public:
+    SCP_string model_file;
+    int model;
+    float rotation;
+    bool should_rotate;
+    
+    TbluiModelViewer();
+    
+    void load_model(SCP_string& filename);
+    
+    virtual bool parse_option(SCP_string& option);
+    virtual void reposition();
+    virtual void load();
+    virtual void unload();
     virtual void render();
 };
 
