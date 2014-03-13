@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <algorithm>
 #include <typeinfo>
+#include <stack>
 
 #include "freespace2/freespace.h"
 #include "menuui/tblui.h"
@@ -31,33 +32,6 @@ float Tblui_frametime = 0.0f;
 int Tblui_mouse_px = 0, Tblui_mouse_py = 0;
 SCP_map<SCP_string,TbluiElement> Tblui_uis;
 
-// This *should* be faster than split_str because it calls gr_get_string_size() once
-// per word and not once per character.
-SCP_string wrap_text(SCP_string text, int w, int h = 0)
-{
-    SCP_string result, temp;
-    size_t next, pos = 0;
-    int tw, th;
-    
-    while (pos < text.size()) {
-        next = text.find(" ", pos + 1);
-        temp += text.substr(pos, next - pos);
-        
-        gr_get_string_size(&tw, &th, temp.c_str(), temp.size());
-        
-        if (tw > w) {
-            result += "\n";
-            result += text.substr(pos + 1, next - pos);
-            temp = result;
-        } else {
-            result = temp;
-        }
-        
-        pos = next;
-    }
-    
-    return result;
-}
 
 void draw_pline(vec3d *line, int line_len, int thickness)
 {
@@ -73,7 +47,6 @@ void draw_pline(vec3d *line, int line_len, int thickness)
 void draw_aaline(int x1, int y1, int x2, int y2, int thickness)
 {
     vertex v1, v2;
-    mprintf(("aaline: %d, %d, %d, %d, %d\n", x1, y1, x2, y2, thickness));
     
     for (int idx = 0; idx < thickness; idx++) {
         v1.screen.xyw.x = x1;
@@ -135,6 +108,171 @@ void parse_message(SCP_string& msg)
     } else {
         stuff_string(msg, F_MESSAGE);
     }
+}
+
+/* Text renderer */
+tblui_text parse_text(SCP_string& text, int font, color& font_color)
+{
+    tblui_text result;
+    tblui_text_chunk temp;
+    SCP_string tag;
+    SCP_string::size_type next, pos = 0;
+    
+    std::stack<int> fonts;
+    std::stack<color> font_colors;
+    
+    // Initialise the first chunk
+    temp.font = font;
+    temp.font_color = font_color;
+    temp.w = 0;
+    temp.h = 0;
+    temp.lnbr = false;
+    
+    gr_set_font(temp.font);
+    
+    while (pos < text.size()) {
+        while (text[pos] == '{') {
+            // Found a tag
+            
+            next = text.find("}", pos);
+            tag = text.substr(pos + 1, next - pos - 1);
+            pos = next + 1;
+            
+            if (tag == "/font") {
+                temp.font = fonts.top();
+                fonts.pop();
+                
+                gr_set_font(temp.font);
+                
+            } else if (tag == "/color" || tag == "/red" || tag == "/green" || tag == "/blue") {
+                temp.font_color = font_colors.top();
+                font_colors.pop();
+                
+            } else if (tag == "red") {
+                font_colors.push(temp.font_color);
+                gr_init_color(&temp.font_color, 255, 0, 0);
+                
+            } else if (tag == "green") {
+                font_colors.push(temp.font_color);
+                gr_init_color(&temp.font_color, 0, 255, 0);
+                
+            } else if (tag == "blue") {
+                font_colors.push(temp.font_color);
+                gr_init_color(&temp.font_color, 0, 0, 255);
+                
+            } else if (tag.find("font ") == 0) {
+                fonts.push(temp.font);
+                temp.font = gr_get_fontnum((char*) tag.substr(5).c_str());
+                
+                gr_set_font(temp.font);
+                
+            } else if (tag.find("color ") == 0) {
+                font_colors.push(temp.font_color);
+                
+                pause_parse();
+                reset_parse((char*) tag.substr(6).c_str());
+                parse_color(&temp.font_color);
+                unpause_parse();
+            } else {
+                Warning(LOCATION, "Encountered unknown tag '%s' in some text!", tag.c_str());
+            }
+        }
+        
+        next = text.find_first_of(" {\n", pos + 1);
+        temp.content = text.substr(pos, next - pos);
+        pos = next;
+        
+        // Try to add all following whitespace to this chunk.
+        // We don't want any chunks to start with a space because during
+        // rendering the wrapping will be done per chunk and if the chunk
+        // starts with a space, so would the new line.
+        while (text[pos] == ' ') {
+            temp.content += ' ';
+            pos++;
+        }
+        
+        while (temp.content[0] == '\n') {
+            tblui_text_chunk lnbr;
+            lnbr.lnbr = true;
+            lnbr.h = temp.h;
+            lnbr.w = 0;
+            result.push_back(lnbr);
+            
+            temp.content = temp.content.substr(1);
+        }
+        
+        // Fill in the size and push it off on the stack.
+        gr_get_string_size(&temp.w, &temp.h, temp.content.c_str(), temp.content.size());
+        result.push_back(temp);
+    }
+    
+    return result;
+}
+
+
+void render_text(int x, int y, int width, int height, tblui_text& text, int skip_lines = 0)
+{
+    int lx = 0, ly = 0, lh = 0;
+    tblui_text::iterator it;
+    
+    for (it = text.begin(); it != text.end(); it++) {
+        if ((width != 0 && height != 0) && ((lx + it->w) > width || it->lnbr)) {
+            if (it->w > width) {
+                Warning(LOCATION, "Skipping text chunk because it didn't fit on the line. (%s)", it->content.c_str());
+                continue;
+            }
+            
+            // Start a new line.
+            ly += lh;
+            if (ly + lh > height && skip_lines < 1) break;
+            
+            lx = 0;
+            lh = 0;
+            
+            if (skip_lines > 1) {
+                skip_lines--;
+            } else if (skip_lines == 1) {
+                ly = 0;
+                skip_lines--;
+            }
+            
+            if (it->lnbr) continue;
+        }
+        
+        if (skip_lines < 1) {
+            gr_set_font(it->font);
+            gr_set_color_fast(&it->font_color);
+            gr_string(x + lx, y + ly, it->content.c_str());
+        }
+        
+        lx += it->w;
+        lh = std::max(lh, it->h);
+    }
+}
+
+void get_text_size(int *w, int *h, tblui_text& text, int forced_width = -1)
+{
+    *w = 0;
+    *h = 0;
+    
+    tblui_text::iterator it;
+    
+    int x = 0, lh = 0;
+    
+    for (it = text.begin(); it != text.end(); it++) {
+        if (it->lnbr || (forced_width > 0 && (x + it->w) > forced_width)) {
+            *h += lh;
+            
+            x = 0;
+            lh = 0;
+        }
+        
+        x += it->w;
+        lh = std::max(lh, it->h);
+        *w = std::max(*w, x);
+    }
+    
+    *h += lh;
 }
 
 TbluiElement::TbluiElement() {
@@ -519,7 +657,8 @@ bool TbluiText::parse_option(SCP_string& option)
     )
     
     TBLUI_OPTION("Text",
-        parse_message(raw_text);
+        parse_message(temp);
+        this->set_text(temp);
     )
     TBLUI_OPTION_END
 }
@@ -536,20 +675,15 @@ void TbluiText::set_font(SCP_string filename)
     text_font = my_font;
 }
 
-void TbluiText::set_text(SCP_string text)
+void TbluiText::set_text(SCP_string msg)
 {
-    raw_text = text;
+    text = parse_text(msg, text_font, text_color);
 }
 
 void TbluiText::reposition()
 {
-    if (text_font > -1) gr_set_font(text_font);
-    
     if (width == 0 || height == 0) {
-        gr_get_string_size(&width, &height, raw_text.c_str(), raw_text.size());
-        wrapped_text = raw_text;
-    } else {
-        wrapped_text = wrap_text(raw_text, width, height);
+        get_text_size(&width, &height, text);
     }
     
     super::reposition();
@@ -557,9 +691,7 @@ void TbluiText::reposition()
 
 void TbluiText::render()
 {
-    gr_set_color_fast(&text_color);
-    gr_set_font(text_font);
-    gr_string(x, y, wrapped_text.c_str());
+    render_text(x, y, calc_w, calc_h, text);
     
     super::render();
 }
@@ -962,42 +1094,25 @@ void TbluiTextBox::reposition()
     int w, h, fw, fh;
     
     TbluiElement::reposition();
-    
-    if (text_font > -1) gr_set_font(text_font);
-    
-    wrapped_text = wrap_text(raw_text, calc_w - slider->width - 10);
-    gr_get_string_size(&w, &h, wrapped_text.c_str(), wrapped_text.size());
-    full_text.clear();
+    get_text_size(&w, &h, text, calc_w - slider->calc_w - 10);
     
     if (h > calc_h) {
+        gr_set_font(text_font);
         gr_get_string_size(&fw, &fh, "g'A", 3);
+        
         display_lines = calc_h / fh;
-        
-        SCP_string::size_type pos1 = 0, pos2;
-        while (pos1 != SCP_string::npos) {
-            pos2 = wrapped_text.find("\n", pos1);
-            if (pos2 != SCP_string::npos) pos2 += 1;
-            
-            full_text.push_back(wrapped_text.substr(pos1, pos2 - pos1));
-            pos1 = pos2;
-        }
-        
-        slider->set_max(full_text.size() - display_lines);
+        slider->set_max((h / fh) - display_lines + 1);
     } else {
         display_lines = 1;
-        full_text.push_back(wrapped_text);
         slider->set_max(0);
     }
 }
 
 void TbluiTextBox::render()
 {
-    wrapped_text = "";
-    for (int idx = slider->spos, end = std::min(slider->spos + display_lines, (int)full_text.size()); idx < end; idx++) {
-        wrapped_text += full_text.at(idx);
-    }
+    render_text(x, y, calc_w - slider->calc_w - 10, calc_h, text, slider->spos);
     
-    super::render();
+    TbluiElement::render();
 }
 
 // Helpers
@@ -1111,11 +1226,10 @@ void tblui_parse_children(TbluiElement *parent)
     while (!check_for_string("]")) {
         if (optional_string("$Box")) {
             child = new TbluiBox;
-        } else if (optional_string("$Text:")) {
+        } else if (optional_string("$TextBox")) {
+            child = new TbluiTextBox;
+        } else if (optional_string("$Text")) {
             child = new TbluiText;
-            
-            parse_message(option);
-            ((TbluiText*) child)->set_text(option);
         } else if (optional_string("$Image:")) {
             child = new TbluiImage;
             
@@ -1130,8 +1244,9 @@ void tblui_parse_children(TbluiElement *parent)
             child = new TbluiButton;
         } else if (optional_string("$Slider")) {
             child = new TbluiSlider;
-        } else if (optional_string("$TextBox")) {
-            child = new TbluiTextBox;
+        } else {
+            stuff_string(option, F_RAW);
+            Error(LOCATION, "Expected tblui element! Found [%s]!", option.c_str());
         }
         
         while (optional_string("+")) {

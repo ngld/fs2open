@@ -20,6 +20,16 @@
 #define TBLUI_BTN_HOVER  1
 #define TBLUI_BTN_DOWN   2
 
+struct tblui_text_chunk
+{
+    SCP_string content;
+    int font;
+    color font_color;
+    
+    int w, h;
+    bool lnbr;
+};
+typedef SCP_vector<tblui_text_chunk> tblui_text;
 
 class TbluiElement
 {
@@ -98,7 +108,7 @@ private:
 public:
     color text_color;
     int text_font;
-    SCP_string raw_text, wrapped_text;
+    tblui_text text;
     
     TbluiText();
     
@@ -201,7 +211,6 @@ private:
 
 public:
     TbluiSlider *slider;
-    SCP_vector<SCP_string> full_text;
     int display_lines;
     
     TbluiTextBox();
