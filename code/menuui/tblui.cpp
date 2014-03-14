@@ -36,9 +36,15 @@ bool Tblui_mouse_down = false;
 float Tblui_frametime = 0.0f;
 int Tblui_mouse_px = 0, Tblui_mouse_py = 0;
 SCP_map<SCP_string,TbluiElement> Tblui_uis;
+SCP_map<SCP_string,SCP_string> Tblui_templates;
+
+void tblui_parse_children(TbluiElement*);
 
 // Reference to missionscreencommon.cpp
 extern int anim_timer_start;
+
+// Reference to parselo.cpp
+extern char *Mp;
 
 void draw_pline(vec3d *line, int line_len, int thickness)
 {
@@ -109,9 +115,9 @@ void parse_color(color *clr)
 
 void parse_message(SCP_string& msg)
 {
-    if (optional_string("[")) {
-        stuff_string_until(msg, "]");
-        required_string("]");
+    if (optional_string("([")) {
+        stuff_string_until(msg, "])");
+        required_string("])");
     } else {
         stuff_string(msg, F_MESSAGE);
     }
@@ -323,7 +329,7 @@ TbluiElement::TbluiElement() {
 
 TbluiElement::~TbluiElement()
 {
-    this->unload();
+    //this->unload();
     
     for (int idx = 0; idx < (int) children.size(); idx++) {
         delete children.at(idx);
@@ -1307,6 +1313,87 @@ void tblui_state_close()
 }
 
 // parse stuff
+void tblui_parse_templates()
+{
+    SCP_string temp;
+    
+    while (optional_string("#Template")) {
+        stuff_string(temp, F_RAW);
+        
+        stuff_string_until(Tblui_templates[temp], "#End Template");
+        required_string("#End Template");
+    }
+}
+
+// Well... this is kind of hacky but it works!
+void tblui_compile_template(SCP_string& name, TbluiElement *parent)
+{
+    SCP_string tpl = Tblui_templates[name];
+    SCP_string options, var, value;
+    SCP_string::size_type pos;
+    
+    while (optional_string("-")) {
+        stuff_string(var, F_RAW, ":");
+        
+        if (optional_string(":")) {
+            // This template var has a value. Replace all ###VAR### markers with the value.
+            
+            if (optional_string("[")) {
+                stuff_string_until(value, "];");
+                required_string("];");
+            } else {
+                stuff_string(value, F_RAW);
+            }
+            
+            var = "###" + var + "###";
+            while ((pos = tpl.find(var)) != SCP_string::npos) {
+                //tpl = tpl.substr(0, pos) + value + tpl.substr(pos + var.size());
+                tpl.replace(pos, var.size(), value);
+            }
+        } else {
+            // This variable has no value. Just remove all ###VAR### markers
+            
+            var = "###" + var + "###";
+            while ((pos = tpl.find(var)) != SCP_string::npos) {
+                //tpl = tpl.substr(0, pos) + tpl.substr(pos + var.size());
+                tpl.replace(pos, var.size(), "");
+            }
+        }
+    }
+    
+    while (optional_string("+")) {
+        stuff_string(var, F_RAW);
+        
+        if (var.find("([") != SCP_string::npos && var.find("])") == SCP_string::npos) {
+            stuff_string_until(value, "])");
+            required_string("])");
+            
+            var += value + "])";
+        }
+        
+        options += "+" + var + "\n";
+    }
+    
+    while ((pos = tpl.find("###OPTS###")) != SCP_string::npos) {
+        tpl.replace(pos, 10, options);
+    }
+    
+    // Remove all lines left with ###VAR### markers in them.
+    while ((pos = tpl.find("###")) != SCP_string::npos) {
+        pos = tpl.rfind("\n", pos);
+        tpl.replace(pos, tpl.find("\n", pos + 1) - pos, "");
+    }
+    
+    // NOTE: We can't pause_parse() here since parse_text() might pause again which causes an assert...
+    // pause_parse();
+    // reset_parse((char*) tpl.c_str());
+    char *backup = Mp;
+    Mp = (char*) tpl.c_str();
+    
+    tblui_parse_children(parent);
+    
+    Mp = backup;
+}
 
 void tblui_parse_children(TbluiElement *parent)
 {
@@ -1315,7 +1402,16 @@ void tblui_parse_children(TbluiElement *parent)
     
     required_string("[");
     while (!check_for_string("]")) {
-        if (optional_string("$Box")) {
+        if (optional_string("%"))  {
+            stuff_string(option, F_RAW);
+            
+            if (!Tblui_templates.count(option)) {
+                Error(LOCATION, "Couldn't found template '%s'!", option.c_str());
+            }
+            
+            tblui_compile_template(option, parent);
+            continue;
+        } else if (optional_string("$Box")) {
             child = new TbluiBox;
         } else if (optional_string("$TextBox")) {
             child = new TbluiTextBox;
@@ -1367,6 +1463,8 @@ void tblui_parse_table(SCP_string filename)
     
     read_file_text(filename.c_str(), CF_TYPE_TABLES);
     reset_parse();
+    
+    tblui_parse_templates();
     
     required_string("#Interface Start");
     while (optional_string("$Name:")) {

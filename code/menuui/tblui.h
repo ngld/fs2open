@@ -31,6 +31,7 @@ struct tblui_text_chunk
 };
 typedef SCP_vector<tblui_text_chunk> tblui_text;
 
+
 class TbluiElement
 {
 protected:
