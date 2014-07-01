@@ -638,7 +638,6 @@ void main_hall_exit_game()
 void main_hall_do(float frametime)
 {
 	int code, key, snazzy_action;
-	bool cheat_anim_found;
 
 	// set the screen scale to the main hall's dimensions
 	gr_set_screen_scale(Main_hall_bitmap_w, Main_hall_bitmap_h, Main_hall->zoom_area_width, Main_hall->zoom_area_height);
@@ -670,32 +669,41 @@ void main_hall_do(float frametime)
 			Main_hall_cheat = Main_hall_cheat.substr(Main_hall_cheat.length() - 40);
 		}
 		
+		int cur_frame;
+		float anim_time;
+		bool cheat_anim_found, cheat_found = false;
+		
 		for (int c_idx = 0; c_idx < (int) Main_hall->cheat.size(); c_idx++) {
 			cheat_anim_found = false;
 			
 			if(Main_hall_cheat.find(Main_hall->cheat.at(c_idx)) != SCP_string::npos) {
+				cheat_found = true;
 				// switch animations
 				
 				for (int idx = 0; idx < Main_hall->num_misc_animations; idx++) {
 					if (Main_hall->misc_anim_name.at(idx) == Main_hall->cheat_anim_from.at(c_idx)) {
 						Main_hall->misc_anim_name.at(idx) = Main_hall->cheat_anim_to.at(c_idx);
 						
+						cur_frame = Main_hall_misc_anim.at(idx).current_frame;
+						anim_time = Main_hall_misc_anim.at(idx).anim_time;
+						
 						generic_anim_unload(&Main_hall_misc_anim.at(idx));
 						generic_anim_init(&Main_hall_misc_anim.at(idx), Main_hall->misc_anim_name.at(idx));
+						
 						if (generic_anim_stream(&Main_hall_misc_anim.at(idx)) == -1) {
-							nprintf(("General","WARNING!, Could not load misc %s anim in main hall\n", Main_hall->misc_anim_name.at(idx).c_str()));
+							nprintf(("General","WARNING! Could not load misc %s anim in main hall\n", Main_hall->misc_anim_name.at(idx).c_str()));
 						} else {
 							// start paused
 							if (Main_hall->misc_anim_modes.at(idx) == MISC_ANIM_MODE_HOLD)
 								Main_hall_misc_anim.at(idx).direction |= GENERIC_ANIM_DIRECTION_NOLOOP;
 						}
+						
+						Main_hall_misc_anim.at(idx).current_frame = cur_frame;
+						Main_hall_misc_anim.at(idx).anim_time = anim_time;
 
 						// null out the delay timestamps
 						Main_hall->misc_anim_delay.at(idx).at(0) = -1;
 
-						// start paused
-						Main_hall->misc_anim_paused.at(idx) = true;
-						
 						cheat_anim_found = true;
 						break;
 					}
@@ -706,13 +714,20 @@ void main_hall_do(float frametime)
 						if (Main_hall->door_anim_name.at(idx) == Main_hall->cheat_anim_from.at(c_idx)) {
 							Main_hall->door_anim_name.at(idx) = Main_hall->cheat_anim_to.at(c_idx);
 							
+							cur_frame = Main_hall_door_anim.at(idx).current_frame;
+							anim_time = Main_hall_door_anim.at(idx).anim_time;
+							
 							generic_anim_unload(&Main_hall_door_anim.at(idx));
 							generic_anim_init(&Main_hall_door_anim.at(idx), Main_hall->door_anim_name.at(idx));
+							
 							if (generic_anim_stream(&Main_hall_door_anim.at(idx)) == -1) {
-								nprintf(("General","WARNING!, Could not load door anim %s in main hall\n",Main_hall->door_anim_name.at(idx).c_str()));
+								nprintf(("General","WARNING! Could not load door anim %s in main hall\n", Main_hall->door_anim_name.at(idx).c_str()));
 							} else {
 								Main_hall_door_anim.at(idx).direction = GENERIC_ANIM_DIRECTION_BACKWARDS | GENERIC_ANIM_DIRECTION_NOLOOP;
 							}
+							
+							Main_hall_door_anim.at(idx).current_frame = cur_frame;
+							Main_hall_door_anim.at(idx).anim_time = anim_time;
 							
 							cheat_anim_found = true;
 							break;
@@ -721,9 +736,16 @@ void main_hall_do(float frametime)
 				}
 				
 				if (!cheat_anim_found) {
-					Warning(LOCATION, "Could not find animation '%s' for cheat '%s'!", Main_hall->cheat_anim_from.at(c_idx).c_str(), Main_hall->cheat.at(c_idx).c_str());
+					// Note: This can also happen if the cheat triggers a second time since the animations are already switched at that point.
+					nprintf(("General", "Could not find animation '%s' for cheat '%s'!", Main_hall->cheat_anim_from.at(c_idx).c_str(), Main_hall->cheat.at(c_idx).c_str()));
 				}
 			}
+		}
+		
+		if(cheat_found) {
+			// Found a cheat, clear the buffer.
+			
+			Main_hall_cheat = "";
 		}
 	}
 
