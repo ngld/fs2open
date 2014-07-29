@@ -55,6 +55,7 @@ extern void game_process_cheats(int k);
 #define MISC_ANIM_MODE_HOLD			1		// play to the end and hold the animation
 #define MISC_ANIM_MODE_TIMED		2		// uses timestamps to determine when a finished anim should be checked again
 #define NUM_REGIONS					7		// (6 + 1 for multiplayer equivalent of campaign room)
+#define MAIN_HALL_MAX_CHEAT_LEN		40		// cheat buffer length (also maximum cheat length)
 
 SCP_vector< SCP_vector<main_hall_defines> > Main_hall_defines;
 
@@ -688,8 +689,8 @@ void main_hall_do(float frametime)
 		game_process_cheats(key);
 		
 		Main_hall_cheat += (char) key_to_ascii(key);
-		if(Main_hall_cheat.length() > 40) {
-			Main_hall_cheat = Main_hall_cheat.substr(Main_hall_cheat.length() - 40);
+		if(Main_hall_cheat.size() > MAIN_HALL_MAX_CHEAT_LEN) {
+			Main_hall_cheat = Main_hall_cheat.substr(Main_hall_cheat.size() - MAIN_HALL_MAX_CHEAT_LEN);
 		}
 		
 		int cur_frame;
@@ -2142,6 +2143,10 @@ void parse_main_hall_table(const char* filename)
 			while (optional_string("+Cheat String:")) {
 				stuff_string(temp_string, F_RAW, MAX_FILENAME_LEN);
 				m->cheat.push_back(temp_string);
+
+				if(strlen(temp_string) > MAIN_HALL_MAX_CHEAT_LEN) {
+					Warning(LOCATION, "The value '%s' for '+Cheat String:' is too long! It can be at most %d characters long.", temp_string, MAIN_HALL_MAX_CHEAT_LEN);
+				}
 				
 				required_string("+Anim To Change:");
 				stuff_string(temp_string, F_NAME, MAX_FILENAME_LEN);
