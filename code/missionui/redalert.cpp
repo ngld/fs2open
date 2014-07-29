@@ -32,6 +32,7 @@
 #include "cfile/cfile.h"
 #include "io/mouse.h"
 #include "ai/aigoals.h"
+#include "mod_table/mod_table.h"
 
 #include <stdexcept>
 
@@ -336,7 +337,7 @@ void red_alert_init()
 	}
 
 	if ( Briefing->num_stages > 0 ) {
-		brief_color_text_init(Briefing->stages[0].text.c_str(), Ra_brief_text_wnd_coords[gr_screen.res][RA_W_COORD], 0);
+		brief_color_text_init(Briefing->stages[0].text.c_str(), Ra_brief_text_wnd_coords[gr_screen.res][RA_W_COORD], default_redalert_briefing_color, 0);
 	}
 
 	red_alert_voice_load();
@@ -901,6 +902,10 @@ void red_alert_bash_wingman_status()
 			so = GET_NEXT(so);
 		}
 	}
+
+	// NOTE: in retail, red alert data was not loaded for ships that arrived later in the mission
+	if (!Red_alert_applies_to_delayed_ships)
+		return;
 
 	// go through all ships yet to arrive, and see if there is red alert status data for any
 

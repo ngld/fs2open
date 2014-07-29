@@ -30,6 +30,7 @@ bool Flight_controls_follow_eyepoint_orientation = false;
 int FS2NetD_port = 0;
 float Briefing_window_FOV = 0.29375f;
 bool Disable_hc_message_ani = false;
+bool Red_alert_applies_to_delayed_ships = false;
 
 
 void parse_mod_table(const char *filename)
@@ -37,13 +38,9 @@ void parse_mod_table(const char *filename)
 	int rval;
 	// SCP_vector<SCP_string> lines;
 
-	// open localization
-	lcl_ext_open();
-
 	if ((rval = setjmp(parse_abort)) != 0)
 	{
 		mprintf(("TABLES: Unable to parse '%s'!  Error code = %i.\n", (filename) ? filename : "<default game_settings.tbl>", rval));
-		lcl_ext_close();
 		return;
 	}
 
@@ -89,6 +86,15 @@ void parse_mod_table(const char *filename)
 			}
 
 			Ignored_campaigns.push_back(campaign_name);
+		}
+	}
+
+	if (optional_string("$Red-alert applies to delayed ships:")) {
+		stuff_boolean(&Red_alert_applies_to_delayed_ships);
+		if (Red_alert_applies_to_delayed_ships) {
+			mprintf(("Game Settings Table: Red-alert stats will be loaded for ships that arrive later in missions\n"));
+		} else {
+			mprintf(("Game Settings Table: Red-alert stats will NOT be loaded for ships that arrive later in missions (this is retail behavior)\n"));
 		}
 	}
 
@@ -254,9 +260,6 @@ void parse_mod_table(const char *filename)
 	}
 
 	required_string("#END");
-
-	// close localization
-	lcl_ext_close();
 }
 
 void mod_table_init()

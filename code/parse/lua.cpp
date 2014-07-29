@@ -6041,7 +6041,7 @@ ADE_FUNC(renderTechModel, l_Shipclass, "X1, Y1, X2, Y2, [Rotation %, Pitch %, Ba
 	ship_info *sip = &Ship_info[idx];
 
 	if (sip->uses_team_colors) {
-		gr_set_team_color(sip->default_team_name, "<none>", 0, 0);
+		gr_set_team_color(sip->default_team_name, "none", 0, 0);
 	}
 
 	//Make sure model is loaded
@@ -6119,7 +6119,7 @@ ADE_FUNC(renderTechModel2, l_Shipclass, "X1, Y1, X2, Y2, orientation Orientation
 	ship_info *sip = &Ship_info[idx];
 
 	if (sip->uses_team_colors) {
-		gr_set_team_color(sip->default_team_name, "<none>", 0, 0);
+		gr_set_team_color(sip->default_team_name, "none", 0, 0);
 	}
 
 	//Make sure model is loaded
@@ -12270,6 +12270,11 @@ ADE_FUNC(setTips, l_Base, "True or false", "Sets whether to display tips of the 
 	return ADE_RETURN_NIL;
 }
 
+ADE_FUNC(getGameDifficulty, l_Base, NULL, "Returns the difficulty level from 1-5, 1 being the lowest, (Very Easy) and 5 being the highest (Insane)", "integer", "Difficulty level as integer")
+{
+	return ade_set_args(L, "i", Game_skill_level+1);
+}
+
 ADE_FUNC(postGameEvent, l_Base, "gameevent Event", "Sets current game event. Note that you can crash FreeSpace 2 by posting an event at an improper time, so test extensively if you use it.", "boolean", "True if event was posted, false if passed event was invalid")
 {
 	gameevent_h *gh = NULL;
@@ -15911,7 +15916,7 @@ bool Ade_get_args_lfunction = false;
 //from the stack in series, so it can easily be used
 //to get the return values from a chunk of Lua code
 //after it has been executed. See RunByteCode()
-int ade_get_args(lua_State *L, char *fmt, ...)
+int ade_get_args(lua_State *L, const char *fmt, ...)
 {
 	//Check that we have all the arguments that we need
 	//If we don't, return 0
@@ -16111,7 +16116,7 @@ int ade_get_args(lua_State *L, char *fmt, ...)
 //
 //NOTE: You can also use this to push arguments
 //on to the stack in series. See script_state::SetHookVar
-int ade_set_args(lua_State *L, char *fmt, ...)
+int ade_set_args(lua_State *L, const char *fmt, ...)
 {
 	//Start throught
 	va_list vl;
