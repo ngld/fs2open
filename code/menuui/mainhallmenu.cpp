@@ -2137,22 +2137,22 @@ void parse_main_hall_table(const char* filename)
 			
 			// add cheats
 			while (optional_string("+Cheat String:")) {
-				stuff_string(temp_string, F_RAW, MAX_FILENAME_LEN);
-				m->cheat.push_back(temp_string);
+				stuff_string(temp_scp_string, F_RAW);
+				m->cheat.push_back(temp_scp_string);
 
-				if(strlen(temp_string) > MAIN_HALL_MAX_CHEAT_LEN) {
+				if(temp_scp_string.size() > MAIN_HALL_MAX_CHEAT_LEN) {
 					// Since the value is longer than the cheat buffer it will never match.
 
-					Warning(LOCATION, "The value '%s' for '+Cheat String:' is too long! It can be at most %d characters long.", temp_string, MAIN_HALL_MAX_CHEAT_LEN);
+					Warning(LOCATION, "The value '%s' for '+Cheat String:' is too long! It can be at most %d characters long.", temp_scp_string.size(), MAIN_HALL_MAX_CHEAT_LEN);
 				}
 				
 				required_string("+Anim To Change:");
-				stuff_string(temp_string, F_NAME, MAX_FILENAME_LEN);
-				m->cheat_anim_from.push_back(temp_string);
+				stuff_string(temp_scp_string, F_NAME);
+				m->cheat_anim_from.push_back(temp_scp_string);
 				
 				required_string("+Anim To Change To:");
-				stuff_string(temp_string, F_NAME, MAX_FILENAME_LEN);
-				m->cheat_anim_to.push_back(temp_string);
+				stuff_string(temp_scp_string, F_NAME);
+				m->cheat_anim_to.push_back(temp_scp_string);
 			}
 
 			// minimum resolution
