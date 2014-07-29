@@ -843,11 +843,7 @@ void main_hall_do(float frametime)
 					Player->flags &= ~PLAYER_FLAGS_IS_MULTI;
 					Game_mode = GM_NORMAL;
 					
-					if (strlen(Main_hall_campaign_cheat)) {
-						gameseq_post_event(GS_EVENT_CAMPAIGN_CHEAT);
-					} else {
-						gameseq_post_event(GS_EVENT_NEW_CAMPAIGN);
-					}
+					gameseq_post_event(GS_EVENT_NEW_CAMPAIGN);
 					gamesnd_play_iface(SND_IFACE_MOUSE_CLICK);
 					break;
 
@@ -2145,6 +2141,8 @@ void parse_main_hall_table(const char* filename)
 				m->cheat.push_back(temp_string);
 
 				if(strlen(temp_string) > MAIN_HALL_MAX_CHEAT_LEN) {
+					// Since the value is longer than the cheat buffer it will never match.
+
 					Warning(LOCATION, "The value '%s' for '+Cheat String:' is too long! It can be at most %d characters long.", temp_string, MAIN_HALL_MAX_CHEAT_LEN);
 				}
 				
