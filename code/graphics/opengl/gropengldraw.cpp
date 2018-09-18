@@ -89,8 +89,8 @@ void opengl_setup_scene_textures()
 
 	if ( Cmdline_no_fbo ) {
 		Cmdline_postprocess = 0;
-		Cmdline_softparticles = 0;
-		Cmdline_fb_explosions = 0;
+		Gr_enable_soft_particles = false;
+		Gr_framebuffer_effects = {};
 
 		Scene_ldr_texture = 0;
 		Scene_color_texture = 0;
@@ -339,12 +339,12 @@ void opengl_setup_scene_textures()
 		//Scene_fxaa_output_texture = 0;
 
 		Cmdline_postprocess = 0;
-		Cmdline_softparticles = 0;
+		Gr_enable_soft_particles = false;
 		return;
 	}
 
 	//Setup thruster distortion framebuffer
-    if (Cmdline_fb_thrusters || Cmdline_fb_explosions) 
+    if (Gr_framebuffer_effects.any_set())
     {
         glGenFramebuffers(1, &Distortion_framebuffer);
 		GL_state.BindFrameBuffer(Distortion_framebuffer);
@@ -393,7 +393,7 @@ void opengl_setup_scene_textures()
 		Scene_depth_texture = 0;
 
 		Cmdline_postprocess = 0;
-		Cmdline_softparticles = 0;
+		Gr_enable_soft_particles = false;
 		return;
 	}
 

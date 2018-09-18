@@ -213,9 +213,9 @@ namespace os
 	 * @ingroup os_graphics_api
 	 */
 	enum class ViewportState {
-		Windowed,
-		Borderless,
-		Fullscreen
+		Windowed = 0,
+		Borderless = 1,
+		Fullscreen = 2
 	};
 
 	/**

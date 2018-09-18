@@ -1,8 +1,16 @@
 
 
-
-
-
+#include "gropengl.h"
+#include "gropenglbmpman.h"
+#include "gropengldeferred.h"
+#include "gropengldraw.h"
+#include "gropenglpostprocessing.h"
+#include "gropenglquery.h"
+#include "gropenglshader.h"
+#include "gropenglstate.h"
+#include "gropenglsync.h"
+#include "gropengltexture.h"
+#include "gropengltnl.h"
 #include "bmpman/bmpman.h"
 #include "cfile/cfile.h"
 #include "cmdline/cmdline.h"
@@ -10,32 +18,22 @@
 #include "debugconsole/console.h"
 #include "globalincs/systemvars.h"
 #include "graphics/2d.h"
+#include "graphics/line.h"
 #include "graphics/matrix.h"
 #include "graphics/paths/PathRenderer.h"
-#include "gropengl.h"
-#include "gropenglbmpman.h"
-#include "gropengldraw.h"
-#include "gropenglpostprocessing.h"
-#include "gropenglquery.h"
-#include "gropenglsync.h"
-#include "gropenglshader.h"
-#include "gropenglstate.h"
-#include "gropengltexture.h"
-#include "gropengltnl.h"
-#include "gropengldeferred.h"
-#include "graphics/line.h"
 #include "io/mouse.h"
 #include "io/timer.h"
+#include "libs/renderdoc/renderdoc.h"
 #include "math/floating.h"
 #include "model/model.h"
 #include "nebula/neb.h"
-#include "libs/renderdoc/renderdoc.h"
+#include "options/Option.h"
 #include "osapi/osapi.h"
 #include "osapi/osregistry.h"
-#include "render/3d.h"
-#include "popup/popup.h"
-#include "tracing/tracing.h"
 #include "pngutils/pngutils.h"
+#include "popup/popup.h"
+#include "render/3d.h"
+#include "tracing/tracing.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -98,6 +96,33 @@ static std::unique_ptr<os::OpenGLContext> GL_context = nullptr;
 
 static std::unique_ptr<os::GraphicsOperations> graphic_operations = nullptr;
 static os::Viewport* current_viewport = nullptr;
+
+static bool mode_change_func(os::ViewportState state, bool initial)
+{
+	if (initial) {
+		return false;
+	}
+
+	auto window = os::getMainViewport();
+	if (window == nullptr) {
+		return false;
+	}
+
+	window->setState(state);
+
+	return true;
+}
+static auto WindowModeOption = options::OptionBuilder<os::ViewportState>("Graphics.WindowMode", "Window Mode",
+                                                                         "Controls how the game window is created.")
+                                   .category("Graphics")
+                                   .level(options::ExpertLevel::Beginner)
+                                   .values({{os::ViewportState::Fullscreen, "Fullscreen"},
+                                            {os::ViewportState::Borderless, "Borderless"},
+                                            {os::ViewportState::Windowed, "Windowed"}})
+                                   .importance(98)
+                                   .default_val(os::ViewportState::Fullscreen)
+                                   .change_listener(mode_change_func)
+                                   .finish();
 
 void opengl_go_fullscreen()
 {
@@ -1021,10 +1046,24 @@ int opengl_init_display_device()
 		attrs.title = Window_title;
 	}
 
-	if (!Cmdline_window && ! Cmdline_fullscreen_window) {
-		attrs.flags.set(os::ViewPortFlags::Fullscreen);
-	} else if (Cmdline_fullscreen_window) {
-		attrs.flags.set(os::ViewPortFlags::Borderless);
+	if (Using_in_game_options) {
+		switch (WindowModeOption->getValue()) {
+		case os::ViewportState::Windowed:
+			// That's the default
+			break;
+		case os::ViewportState::Borderless:
+			attrs.flags.set(os::ViewPortFlags::Borderless);
+			break;
+		case os::ViewportState::Fullscreen:
+			attrs.flags.set(os::ViewPortFlags::Fullscreen);
+			break;
+		}
+	} else {
+		if (!Cmdline_window && !Cmdline_fullscreen_window) {
+			attrs.flags.set(os::ViewPortFlags::Fullscreen);
+		} else if (Cmdline_fullscreen_window) {
+			attrs.flags.set(os::ViewPortFlags::Borderless);
+		}
 	}
 
 	auto viewport = gr_opengl_create_viewport(attrs);
@@ -1572,7 +1611,7 @@ bool gr_opengl_is_capable(gr_capability capability)
 		return Cmdline_height ? true : false;
 	case CAPABILITY_SOFT_PARTICLES:
 	case CAPABILITY_DISTORTION:
-		return Cmdline_softparticles && !Cmdline_no_fbo;
+		return Gr_enable_soft_particles && !Cmdline_no_fbo;
 	case CAPABILITY_POST_PROCESSING:
 		return Cmdline_postprocess  && !Cmdline_no_fbo;
 	case CAPABILITY_DEFERRED_LIGHTING:

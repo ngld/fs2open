@@ -103,11 +103,11 @@ class SDLWindowViewPort: public os::Viewport {
 		switch (state) {
 			case os::ViewportState::Windowed:
 				SDL_SetWindowFullscreen(_window, 0);
-				SDL_SetWindowBordered(_window, SDL_FALSE);
+				SDL_SetWindowBordered(_window, SDL_TRUE);
 				break;
 			case os::ViewportState::Borderless:
 				SDL_SetWindowFullscreen(_window, 0);
-				SDL_SetWindowBordered(_window, SDL_TRUE);
+				SDL_SetWindowBordered(_window, SDL_FALSE);
 				break;
 			case os::ViewportState::Fullscreen:
 				SDL_SetWindowFullscreen(_window, SDL_WINDOW_FULLSCREEN);

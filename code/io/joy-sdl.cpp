@@ -1,6 +1,8 @@
 #include "io/joy.h"
 #include "io/joy_ff.h"
 #include "io/timer.h"
+#include "mod_table/mod_table.h"
+#include "options/Option.h"
 #include "osapi/osapi.h"
 
 #include <algorithm>
@@ -8,16 +10,137 @@
 #include <memory>
 #include <utility>
 
+#include "libs/jansson.h"
+
 using namespace io::joystick;
 using namespace os::events;
 
 namespace {
+
 typedef std::unique_ptr<Joystick> JoystickPtr;
 
 SCP_vector<JoystickPtr> joysticks;
 Joystick *currentJoystick = nullptr;
 
 bool initialized = false;
+
+SCP_string getJoystickGUID(SDL_Joystick* stick)
+{
+	auto guid = SDL_JoystickGetGUID(stick);
+
+	const size_t GUID_STR_SIZE = 33;
+	SCP_string joystickGUID;
+	joystickGUID.resize(GUID_STR_SIZE);
+
+	SDL_JoystickGetGUIDString(guid, &joystickGUID[0], static_cast<int>(joystickGUID.size()));
+
+	// Remove trailing \0
+	joystickGUID.resize(GUID_STR_SIZE - 1);
+
+	// Make sure the GUID is upper case
+	std::transform(begin(joystickGUID), end(joystickGUID), begin(joystickGUID), toupper);
+
+	return joystickGUID;
+}
+
+bool joystickMatchesGuid(Joystick* testStick, const SCP_string& guid, int id)
+{
+	if (guid.empty()) {
+		// Only use the id
+		return id == testStick->getDeviceId();
+	}
+
+	SCP_string guidStr(guid);
+	std::transform(begin(guidStr), end(guidStr), begin(guidStr), toupper);
+
+	if (testStick->getGUID() != guidStr) {
+		return false; // GUID doesn't match
+	}
+
+	// Build a list of all joysticks with the right guid
+	size_t num_sticks = 0;
+	for (auto& stick : joysticks) {
+		if (stick->getGUID() == guidStr) {
+			++num_sticks;
+		}
+	}
+
+	if (num_sticks == 0) {
+		// Not the right GUID
+		return false;
+	}
+	if (num_sticks == 1) {
+		// Only one option -> this is the right stick
+		return true;
+	}
+
+	// Multiple sticks -> check if the device id is the same
+	return testStick->getDeviceId() == id;
+}
+
+bool isCurrentJoystick(Joystick* testStick)
+{
+	auto currentGUID = os_config_read_string(nullptr, "CurrentJoystickGUID", nullptr);
+	auto currentId   = (int)os_config_read_uint(nullptr, "CurrentJoystick", 0);
+
+	return joystickMatchesGuid(testStick, currentGUID, currentId);
+}
+
+Joystick* joystick_deserialize(const json_t* value)
+{
+	const char* guid;
+	int id;
+
+	json_error_t err;
+	if (json_unpack_ex((json_t*)value, &err, 0, "{s:s, s:i}", "guid", &guid, "id", &id) != 0) {
+		throw json_exception(err);
+	}
+
+	for (auto& test_stick : joysticks) {
+		if (joystickMatchesGuid(test_stick.get(), guid, id)) {
+			return test_stick.get();
+		}
+	}
+
+	return nullptr;
+}
+
+json_t* joystick_serializer(Joystick* joystick)
+{
+	if (joystick == nullptr) {
+		return json_null();
+	}
+
+	return json_pack("{sssi}", "guid", joystick->getGUID().c_str(), "id", joystick->getID());
+}
+
+SCP_string joystick_display(Joystick* stick)
+{
+	if (stick == nullptr) {
+		return "None";
+	}
+	return stick->getName();
+}
+
+SCP_vector<Joystick*> joystick_enumerator()
+{
+	SCP_vector<Joystick*> out;
+	out.push_back(nullptr);
+	for (auto& stick : joysticks) {
+		out.push_back(stick.get());
+	}
+	return out;
+}
+
+auto JoystickOption = options::OptionBuilder<Joystick*>("Input.Joystick", "Joystick", "The current joystick.")
+                          .category("Input")
+                          .deserializer(joystick_deserialize)
+                          .serializer(joystick_serializer)
+                          .display(joystick_display)
+                          .enumerator(joystick_enumerator)
+                          .level(options::ExpertLevel::Beginner)
+                          .default_val(nullptr)
+                          .finish();
 
 /**
  * @brief Compatibility conversion from HatPosition to array index
@@ -67,79 +190,6 @@ HatPosition hatBtnToEnum(int in) {
 	}
 };
 
-SCP_string getJoystickGUID(SDL_Joystick *stick)
-{
-	auto guid = SDL_JoystickGetGUID(stick);
-
-	const size_t GUID_STR_SIZE = 33;
-	SCP_string joystickGUID;
-	joystickGUID.resize(GUID_STR_SIZE);
-
-	SDL_JoystickGetGUIDString(guid, &joystickGUID[0], static_cast<int>(joystickGUID.size()));
-
-	// Remove trailing \0
-	joystickGUID.resize(GUID_STR_SIZE - 1);
-
-	// Make sure the GUID is upper case
-	std::transform(begin(joystickGUID), end(joystickGUID), begin(joystickGUID), toupper);
-
-	return joystickGUID;
-}
-
-bool isCurrentJoystick(Joystick* testStick) {
-	auto currentGUID = os_config_read_string(nullptr, "CurrentJoystickGUID", nullptr);
-	auto currentId = (int)os_config_read_uint(nullptr, "CurrentJoystick", 0);
-
-	if ((currentGUID == nullptr) || !strcmp(currentGUID, "")) {
-		// Only use the id
-		return currentId == testStick->getDeviceId();
-	}
-
-	SCP_string guidStr(currentGUID);
-	std::transform(begin(guidStr), end(guidStr), begin(guidStr), toupper);
-
-	if (testStick->getGUID() != guidStr) {
-		return false; // GUID doesn't match
-	}
-
-	// Build a list of all joysticks with the right guid
-	size_t num_sticks = 0;
-	for (auto& stick : joysticks) {
-		if (stick->getGUID() == guidStr) {
-			++num_sticks;
-		}
-	}
-
-	if (num_sticks == 0) {
-		// Not the right GUID
-		return false;
-	}
-	if (num_sticks == 1) {
-		// Only one option -> this is the right stick
-		return true;
-	}
-
-	// Multiple sticks -> check if the device id is the same
-	return testStick->getDeviceId() == currentId;
-}
-
-void enumerateJoysticks(SCP_vector<JoystickPtr>& outVec)
-{
-	auto num = SDL_NumJoysticks();
-	outVec.clear();
-	outVec.reserve(static_cast<size_t>(num));
-
-	mprintf(("Printing joystick info:\n"));
-
-	for (auto i = 0; i < num; ++i)
-	{
-		auto ptr = JoystickPtr(new Joystick(i));
-		ptr->printInfo();
-
-		outVec.push_back(std::move(ptr));
-	}
-}
-
 HatPosition convertSDLHat(int val)
 {
 	switch (val)
@@ -164,6 +214,22 @@ HatPosition convertSDLHat(int val)
 			return HAT_LEFTDOWN;
 		default:
 			return HAT_CENTERED;
+	}
+}
+
+void enumerateJoysticks(SCP_vector<JoystickPtr>& outVec)
+{
+	auto num = SDL_NumJoysticks();
+	outVec.clear();
+	outVec.reserve(static_cast<size_t>(num));
+
+	mprintf(("Printing joystick info:\n"));
+
+	for (auto i = 0; i < num; ++i) {
+		auto ptr = JoystickPtr(new Joystick(i));
+		ptr->printInfo();
+
+		outVec.push_back(std::move(ptr));
 	}
 }
 
@@ -293,10 +359,18 @@ bool device_event_handler(const SDL_Event &evt)
 			return true;
 		}
 
-		if (isCurrentJoystick(addedStick))
-		{
-			// found our wanted stick!
-			setCurrentJoystick(addedStick);
+		if (Using_in_game_options) {
+			auto value = JoystickOption->getValue();
+
+			// Since the new stick has been added to the joystick list, the option will return the same pointer here
+			if (value == addedStick) {
+				setCurrentJoystick(addedStick);
+			}
+		} else {
+			if (isCurrentJoystick(addedStick)) {
+				// found our wanted stick!
+				setCurrentJoystick(addedStick);
+			}
 		}
 	}
 	else if (evtType == SDL_JOYDEVICEREMOVED)
@@ -753,19 +827,25 @@ namespace joystick
 		addEventListener(SDL_JOYDEVICEREMOVED, DEFAULT_LISTENER_WEIGHT, device_event_handler);
 
 		// Search for the correct stick
-		for (auto& stick : joysticks) {
-			if (isCurrentJoystick(stick.get())) {
-				// Joystick found
-				setCurrentJoystick(stick.get());
-				break;
-			}
-		}
+	    if (Using_in_game_options) {
+		    // The new options system is in use
+		    setCurrentJoystick(JoystickOption->getValue());
+	    } else {
+		    // Fall back to the legacy config values
+		    for (auto& stick : joysticks) {
+			    if (isCurrentJoystick(stick.get())) {
+				    // Joystick found
+				    setCurrentJoystick(stick.get());
+				    break;
+			    }
+		    }
 
-		if (currentJoystick == nullptr) {
-			mprintf(("  No joystick is being used.\n"));
-		}
+		    if (currentJoystick == nullptr) {
+			    mprintf(("  No joystick is being used.\n"));
+		    }
+	    }
 
-		initialized = true;
+	    initialized = true;
 
 		joy_ff_init();
 

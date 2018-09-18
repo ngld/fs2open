@@ -134,6 +134,7 @@
 #include "object/objectsnd.h"
 #include "object/waypoint.h"
 #include "observer/observer.h"
+#include "options/OptionsManager.h"
 #include "osapi/osapi.h"
 #include "osapi/osregistry.h"
 #include "parse/encrypt.h"
@@ -1741,6 +1742,11 @@ void game_init()
 	e1 = timer_get_milliseconds();
 
 	mod_table_init();		// load in all the mod dependent settings
+
+	// This needs to be delayed until we know if the new options are actually going to be used
+	if (Using_in_game_options) {
+		options::OptionsManager::instance()->loadInitialValues();
+	}
 
 	// initialize localization module. Make sure this is done AFTER initialzing OS.
 	lcl_init( detect_lang() );	
